@@ -1,0 +1,4 @@
+node_modules/
+*.tgz
+hooks.log
+.claude/settings.local.json

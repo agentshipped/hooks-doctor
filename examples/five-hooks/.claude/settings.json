@@ -1,0 +1,29 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Read",
+        "hooks": [{ "type": "command", "command": "bash .claude/hooks/guard.sh" }]
+      },
+      {
+        "matcher": "bash",
+        "hooks": [{ "type": "command", "command": "bash .claude/hooks/audit.sh" }]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [{ "type": "command", "command": "bash .claude/hooks/syntax.sh" }]
+      },
+      {
+        "matcher": "Write",
+        "hooks": [{ "type": "command", "command": "bash .claude/hooks/changed.sh" }]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [{ "type": "command", "command": "bash .claude/hooks/stop.sh" }]
+      }
+    ]
+  }
+}

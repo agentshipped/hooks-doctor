@@ -1,0 +1,31 @@
+{
+  "name": "hooks-doctor",
+  "version": "0.1.0",
+  "description": "Which of your Claude Code hooks never fire, and why. Static checks plus a replay of your own sessions.",
+  "type": "module",
+  "bin": {
+    "hooks-doctor": "bin/hooks-doctor.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "examples"
+  ],
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "claude-code",
+    "hooks",
+    "lint",
+    "cli"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/agentshipped/hooks-doctor.git"
+  },
+  "license": "MIT"
+}
