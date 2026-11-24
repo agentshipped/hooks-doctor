@@ -129,3 +129,9 @@ node --test
 
 MIT. Made for the [Agent Shipped](https://www.youtube.com/@AgentShipped) channel, where each technique is shown
 on a public demo repo. Not affiliated with Anthropic.
+
+## Shown in
+
+Videos on the Agent Shipped channel that use this repo:
+
+- [I wired 5 Claude Code hooks on a real repo. Two never fired](https://youtu.be/aR5c3T0jqvc) · E028 · 2026-11-22
