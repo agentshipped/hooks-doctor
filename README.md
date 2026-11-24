@@ -66,6 +66,8 @@ in CI or a pre-commit step: `npx github:agentshipped/hooks-doctor --no-history -
 | `permission-syntax` | dead | `Bash(npm:*)` in a matcher: that syntax belongs in the hook's `if` field |
 | `bad-regex` | dead | the matcher is not a valid regular expression |
 | `group-shape`, `no-type`, `missing-field`, `bad-type` | dead | the handler is at the wrong level or incomplete |
+| `type-unsupported` | dead | a `prompt` hook on `SessionStart`, an `agent` hook on `PermissionRequest`: the event does not run that handler type |
+| `unhooked-tool` | dead | `EndConversation` on `PreToolUse`, `PostToolUse` or `PermissionRequest`: its calls skip those events |
 | `script-missing`, `not-executable` | dead | the command points at a file that is not there, or cannot be executed |
 | `bad-json` | error | the settings file does not parse |
 | `write-without-edit` | warning | `Write` alone: edits to existing files are `Edit` calls and never reach the hook |
@@ -94,6 +96,8 @@ Read the count for what it is:
 - "selects 37 of 212" means the matcher is right. It does not prove the hook ran then: the transcripts do not
   record hook runs, and a hook you added today gets counts from before it existed.
 - A hook's `if` filter is not evaluated, so its real number is at most the one shown.
+- A `Bash` matcher on `PreToolUse` or `PermissionRequest` also runs for commands started with the Monitor tool
+  (Claude Code 2.1.314 or later). Those calls are counted under `Monitor`, not under your `Bash` matcher.
 - Only tool events have a count (`PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `PermissionRequest`,
   `PermissionDenied`). Matchers of other events are compared with other things (how the session started, the
   notification type) and are not checked.
@@ -102,8 +106,9 @@ Read the count for what it is:
 
 Two sources, both dated in [`src/facts.js`](src/facts.js):
 
-- The hooks reference and the tools reference at code.claude.com/docs, read on 10 Nov 2026: event names, which
-  events take a matcher and what it is compared with, the matcher grammar, the tool names.
+- The hooks reference and the tools reference at code.claude.com/docs, read on 24 Nov 2026: event names, which
+  events take a matcher and what it is compared with, which handler types each event runs, the matcher grammar,
+  the tool names.
 - Measurement. Two sessions on Claude Code 2.1.316 called `Bash`, `Read`, `Edit` and `Write` once each with one
   logging hook per matcher, 28 matchers in all. The table of which hook ran for which tool is the first test in
   [`test/lint.test.js`](test/lint.test.js), and `matches()` has to reproduce it.

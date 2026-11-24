@@ -1,9 +1,9 @@
-// What Claude Code documents about hooks, as read on 2026-11-10 from
-//   https://code.claude.com/docs/en/hooks  ("Matcher patterns" table)
+// What Claude Code documents about hooks, as read on 2026-11-24 from
+//   https://code.claude.com/docs/en/hooks  ("Matcher patterns" table, "Prompt-based hooks" event lists)
 //   https://code.claude.com/docs/en/tools-reference
 // New events and tools appear often. Anything missing here is reported as "not known to this version",
 // never as an error, and tool names seen in your own sessions are added at run time.
-export const FACTS_DATE = "2026-11-10";
+export const FACTS_DATE = "2026-11-24";
 
 // matcher: "tool" = compared with the tool name; "none" = the event ignores matchers; "other" = compared with
 // something else (what), which this tool does not check.
@@ -21,8 +21,8 @@ export const EVENTS = {
   SubagentStop: { matcher: "other", what: "agent type" },
   PreCompact: { matcher: "other", what: "what triggered compaction (manual, auto)" },
   PostCompact: { matcher: "other", what: "what triggered compaction (manual, auto)" },
-  PreModelSwitch: { matcher: "other", what: "model name" },
-  PostModelSwitch: { matcher: "other", what: "model name" },
+  PreModelSwitch: { matcher: "other", what: "canonical model name" },
+  PostModelSwitch: { matcher: "other", what: "canonical model name" },
   ConfigChange: { matcher: "other", what: "configuration source" },
   DirectoryAdded: { matcher: "other", what: "how the directory was added" },
   FileChanged: { matcher: "other", what: "literal filenames to watch" },
@@ -44,12 +44,20 @@ export const EVENTS = {
 };
 
 export const TOOLS = [
-  "Agent", "AskUserQuestion", "Bash", "CronCreate", "CronDelete", "CronList", "Edit", "EnterPlanMode",
-  "EnterWorktree", "ExitPlanMode", "ExitWorktree", "Glob", "Grep", "ListMcpResourcesTool", "LSP", "Monitor",
-  "NotebookEdit", "PowerShell", "PushNotification", "Read", "ReadMcpResourceTool", "ReportFindings",
-  "SendFeedback", "ShareOnboardingGuide", "Skill", "TaskCreate", "TaskGet", "TaskList", "TaskStop", "TaskUpdate",
-  "TodoWrite", "ToolSearch", "WaitForMcpServers", "WebFetch", "WebSearch", "Workflow", "Write",
+  "Agent", "Artifact", "AskUserQuestion", "Bash", "CronCreate", "CronDelete", "CronList", "Edit", "EndConversation",
+  "EnterPlanMode", "EnterWorktree", "ExitPlanMode", "ExitWorktree", "Glob", "Grep", "ListAgents",
+  "ListMcpResourcesTool", "ListPlugins", "ListSkills", "LSP", "Monitor", "NotebookEdit", "PowerShell",
+  "propose_skills", "PushNotification", "Read", "ReadMcpResourceTool", "RemoteTrigger", "ReportFindings",
+  "ScheduleWakeup", "SearchPlugins", "SearchSkills", "SendFeedback", "SendMessage", "SendUserFile",
+  "ShareOnboardingGuide", "Skill", "SubagentHandback", "SuggestPluginInstall", "SuggestSkills", "TaskCreate",
+  "TaskGet", "TaskList", "TaskStop", "TaskUpdate", "TodoWrite", "ToolSearch", "WaitForMcpServers", "WebFetch",
+  "WebSearch", "Workflow", "Write",
 ];
+
+// Tools whose calls skip some tool events, so a matcher that names only them never fires there.
+export const UNHOOKED = {
+  EndConversation: { events: ["PreToolUse", "PostToolUse", "PermissionRequest"], why: "EndConversation calls skip this event" },
+};
 
 // Names that still circulate in copied configs. A retired name in a list is harmless; alone, it is a dead hook.
 export const RETIRED_TOOLS = {
@@ -70,5 +78,21 @@ export const HOOK_TYPES = {
   http: ["url"],
   mcp_tool: ["server", "tool"],
   prompt: ["prompt"],
-  agent: [],
+  agent: ["prompt"],
+};
+
+// Handler types an event runs, where that is fewer than all five ("Not all events support every hook type").
+// An event that is not listed here runs every type.
+const NO_MODEL = ["command", "http", "mcp_tool"];
+export const EVENT_TYPES = {
+  PermissionRequest: ["command", "http", "mcp_tool", "prompt"],
+  Setup: ["command"],
+  SessionStart: ["command", "mcp_tool"],
+  ...Object.fromEntries(
+    [
+      "ConfigChange", "CwdChanged", "DirectoryAdded", "Elicitation", "ElicitationResult", "FileChanged",
+      "InstructionsLoaded", "MessageDisplay", "Notification", "PostCompact", "PostModelSwitch", "PreCompact",
+      "PreModelSwitch", "SessionEnd", "StopFailure", "SubagentStart", "WorktreeCreate", "WorktreeRemove",
+    ].map((e) => [e, NO_MODEL]),
+  ),
 };

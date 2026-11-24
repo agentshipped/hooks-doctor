@@ -126,6 +126,51 @@ test("shape errors", () => {
   assert.deepEqual(codes(lintSettings({ hooks: { Stop: [{ hooks: [{ type: "shell", command: "x" }] }] } }).hooks[0]), ["bad-type"]);
   assert.equal(lintSettings({ disableAllHooks: true }).file[0].code, "disabled");
   assert.deepEqual(lintSettings({ permissions: {} }), { hooks: [], file: [] });
+  // prompt and agent hooks both need a prompt
+  assert.deepEqual(codes(lintSettings({ hooks: { Stop: [{ hooks: [{ type: "agent" }] }] } }).hooks[0]), ["missing-field"]);
+  assert.deepEqual(codes(lintSettings({ hooks: { Stop: [{ hooks: [{ type: "agent", prompt: "tests pass? $ARGUMENTS" }] }] } }).hooks[0]), []);
+});
+
+test("a handler type the event does not run is dead", () => {
+  const one = (event, handler, matcher) => lintSettings({ hooks: { [event]: [{ ...(matcher ? { matcher } : {}), hooks: [handler] }] } }).hooks[0];
+  const prompt = { type: "prompt", prompt: "ok? $ARGUMENTS" };
+  const agent = { type: "agent", prompt: "ok? $ARGUMENTS" };
+  const http = { type: "http", url: "http://localhost:8080/hook" };
+  const tool = { type: "mcp_tool", server: "memory", tool: "note" };
+  const command = { type: "command", command: "echo hi" };
+
+  const onStart = one("SessionStart", prompt);
+  assert.deepEqual(codes(onStart), ["type-unsupported"]);
+  assert.equal(worst(onStart.findings), "error");
+  assert.match(onStart.findings[0].message, /never runs on SessionStart: this event runs only command, mcp_tool hooks/);
+  assert.deepEqual(codes(one("SessionStart", http)), ["type-unsupported"]);
+  assert.deepEqual(codes(one("SessionStart", tool)), []);
+  assert.deepEqual(codes(one("SessionStart", command)), []);
+  assert.deepEqual(codes(one("Setup", tool)), ["type-unsupported"]);
+  assert.deepEqual(codes(one("Setup", command)), []);
+  assert.deepEqual(codes(one("PermissionRequest", agent, "Bash")), ["type-unsupported"]);
+  assert.deepEqual(codes(one("PermissionRequest", prompt, "Bash")), []);
+  assert.deepEqual(codes(one("Notification", prompt)), ["type-unsupported"]);
+  assert.deepEqual(codes(one("Notification", http)), []);
+  for (const event of ["PreToolUse", "PostToolUse", "Stop", "SubagentStop", "UserPromptSubmit", "TaskCompleted"]) {
+    for (const handler of [prompt, agent, http, tool, command]) assert.deepEqual(codes(one(event, handler)), [], `${handler.type} on ${event}`);
+  }
+  // a misspelt event is judged by the event it was meant to be; an unknown event is not judged at all
+  assert.deepEqual(codes(one("sessionstart", prompt)), ["event-case", "type-unsupported"]);
+  assert.deepEqual(codes(one("BrandNewEvent", prompt)), ["unknown-event"]);
+});
+
+test("EndConversation calls skip the tool events that run before and after other tools", () => {
+  const alone = lintOne("PreToolUse", "EndConversation");
+  assert.deepEqual(codes(alone), ["unhooked-tool"]);
+  assert.equal(worst(alone.findings), "error");
+  const mixed = lintOne("PostToolUse", "Bash|EndConversation");
+  assert.deepEqual(codes(mixed), ["unhooked-tool"]);
+  assert.equal(worst(mixed.findings), "warn");
+  assert.deepEqual(codes(lintOne("PreToolUse", "^EndConversation$")), ["unhooked-tool"]);
+  assert.deepEqual(codes(lintOne("PreToolUse", "End.*|^Bash$")), []);
+  assert.deepEqual(codes(lintOne("PermissionDenied", "EndConversation")), []); // not documented for this event
+  assert.deepEqual(codes(lintOne("PreToolUse", "SendMessage|ScheduleWakeup|Artifact")), []); // in the tools reference since 24 Nov 2026
 });
 
 test("script checks: missing file, not executable, relative path", () => {

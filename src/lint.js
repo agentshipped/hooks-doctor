@@ -3,7 +3,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { EVENTS, TOOLS, RETIRED_TOOLS, LISTED_AS, HOOK_TYPES } from "./facts.js";
+import { EVENTS, TOOLS, RETIRED_TOOLS, LISTED_AS, UNHOOKED, HOOK_TYPES, EVENT_TYPES } from "./facts.js";
 
 // Only letters, digits, _, -, spaces, commas and | : a list of exact names. Anything else: a regular expression.
 const LIST = /^[A-Za-z0-9_\-, |]+$/;
@@ -137,7 +137,9 @@ function checkMatcher(event, matcher, tools) {
     const dead = [];
     let live = 0;
     for (const n of p.names) {
-      if (tools.includes(n) || n.startsWith("mcp__")) {
+      if (UNHOOKED[n]?.events.includes(event)) {
+        dead.push(finding("error", "unhooked-tool", `"${n}" never fires on ${event}: ${UNHOOKED[n].why}`, `drop "${n}" from the matcher`));
+      } else if (tools.includes(n) || n.startsWith("mcp__")) {
         live += 1;
       } else if (known.has(lower(n))) {
         dead.push(finding("error", "case", `"${n}" never fires: matchers are case-sensitive and the tool is called ${known.get(lower(n))}`, `write "${known.get(lower(n))}"`));
@@ -156,7 +158,10 @@ function checkMatcher(event, matcher, tools) {
     out.push(...dead.map((f) => (live && f.level === "error" ? { ...f, level: "warn", message: f.message.replace("never fires", "never matches") } : f)));
   } else {
     const hit = tools.filter((t) => p.re.test(t));
-    if (hit.length === 0 && !/mcp/.test(m)) {
+    const skipped = hit.filter((t) => UNHOOKED[t]?.events.includes(event));
+    if (hit.length && skipped.length === hit.length) {
+      out.push(finding("error", "unhooked-tool", `the pattern "${m}" never fires on ${event}: it matches only ${hit.join(", ")}, and ${UNHOOKED[hit[0]].why}`, "match a tool whose calls reach this event"));
+    } else if (hit.length === 0 && !/mcp/.test(m)) {
       const ci = tools.filter((t) => new RegExp(m, "i").test(t));
       if (ci.length) out.push(finding("error", "case", `the pattern "${m}" never fires: it matches no tool as written, and would match ${ci.join(", ")} with the right case`, "fix the case"));
       else out.push(finding("warn", "unknown-tool", `the pattern "${m}" matches no tool name this version knows`, "check the spelling against the tool names in your own sessions"));
@@ -171,7 +176,7 @@ function checkMatcher(event, matcher, tools) {
   return out;
 }
 
-function checkHandler(h, projectDir, platform) {
+function checkHandler(h, projectDir, platform, event) {
   const f = [];
   const type = h?.type;
   if (!type) {
@@ -181,6 +186,10 @@ function checkHandler(h, projectDir, platform) {
   if (!HOOK_TYPES[type]) {
     f.push(finding("error", "bad-type", `unknown hook type "${type}"`, `use one of: ${Object.keys(HOOK_TYPES).join(", ")}`));
     return f;
+  }
+  const runs = EVENT_TYPES[event];
+  if (runs && !runs.includes(type)) {
+    f.push(finding("error", "type-unsupported", `a "${type}" hook never runs on ${event}: this event runs only ${runs.join(", ")} hooks`, `use a "command" hook here, or move this one to an event that runs "${type}" hooks`));
   }
   for (const req of HOOK_TYPES[type]) {
     if (h[req] === undefined || h[req] === "") f.push(finding("error", "missing-field", `a "${type}" hook needs "${req}"`, `add "${req}"`));
@@ -254,7 +263,7 @@ export function lintSettings(settings, { projectDir = process.cwd(), platform = 
           if: h?.if,
           type: h?.type,
           command: h?.command ?? h?.prompt ?? h?.url ?? (h?.tool ? `${h.server}:${h.tool}` : ""),
-          findings: [...groupFindings, ...checkHandler(h, projectDir, platform)],
+          findings: [...groupFindings, ...checkHandler(h, projectDir, platform, canonical)],
         });
       }
     }
