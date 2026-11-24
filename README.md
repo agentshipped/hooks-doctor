@@ -10,7 +10,7 @@ every hook instead of a config you have to trust.
 ```
 $ npx github:agentshipped/hooks-doctor
 
-hooks-doctor 0.1.0  /workspace/notes-api
+hooks-doctor 0.1.2  /workspace/notes-api
 history: 1 session, 8 tool calls (Bash 3, Read 2, Edit 2, Write 1)
 
 .claude/settings.json
@@ -27,12 +27,14 @@ history: 1 session, 8 tool calls (Bash 3, Read 2, Edit 2, Write 1)
         ! "Write" does not see edits: changing an existing file is the Edit tool; Write only creates a file or replaces it whole
           fix: use "Edit|Write"
   ok    Stop         (no matcher)  bash .claude/hooks/stop.sh
+  i 5 commands use a relative script path: it is resolved from the session's current directory; prefix it with "$CLAUDE_PROJECT_DIR"/ to survive a cd
 
 5 hooks: 1 dead, 1 with a warning, 3 ok
+A hook that cannot fire prints no error in Claude Code. Rules follow the hooks reference as of 2026-11-24.
 ```
 
-That output is from a real session. The hooks in it write a line to a log each time they run, and the log agreed
-with every count above: 5, 0, 3, 1. The same five hooks are in [`examples/five-hooks`](examples/five-hooks).
+Those counts come from a real session. The hooks in it write a line to a log each time they run, and the log
+agreed with every count above: 5, 0, 3, 1. The same five hooks are in [`examples/five-hooks`](examples/five-hooks).
 
 ## Run it
 
@@ -42,7 +44,13 @@ In the project you use Claude Code in:
 npx github:agentshipped/hooks-doctor
 ```
 
-Node 18 or newer, no dependencies. It reads files and prints; it changes nothing and makes no network request.
+Node 18 or newer (tested on Node 22 and 24), no dependencies. It reads files and prints; it changes nothing and
+makes no network request.
+
+The report shows your project path, each hook's event, matcher and command (for `prompt`, `http` and `mcp_tool`
+hooks the prompt, the URL, or the server and tool name), and the names of the tools your sessions called, MCP
+server names included. Commands are cut at 70 characters; `--json` gives them whole. Read the report before you
+paste it somewhere public.
 
 ```
 hooks-doctor [project-dir] [options]
@@ -54,8 +62,9 @@ hooks-doctor [project-dir] [options]
   --json           machine-readable output
 ```
 
-Exit code 0 when clean, 1 when at least one hook cannot fire (with `--strict`, also on a warning), so it can sit
-in CI or a pre-commit step: `npx github:agentshipped/hooks-doctor --no-history --no-user`.
+Exit code 0 when clean, 1 when at least one hook cannot fire or a settings file does not parse (with `--strict`,
+also on a warning), so it can sit in CI or a pre-commit step:
+`npx github:agentshipped/hooks-doctor --no-history --no-user`.
 
 ## What it checks
 
@@ -85,9 +94,10 @@ also selects `NotebookEdit`.
 ## The history replay
 
 Claude Code keeps a transcript of each session under `~/.claude/projects/<project>/` (or `$CLAUDE_CONFIG_DIR`).
-`hooks-doctor` reads the transcripts of the project you run it in, including subagent transcripts, and keeps one
-thing per tool call: the tool's name. Prompts, command text and file contents are not kept, printed or sent
-anywhere. Each matcher is then tested against those names.
+`hooks-doctor` reads the transcripts of the project you run it in, including subagent transcripts, and keeps two
+things per tool call: the tool's name and the time of the call (the times only give the `from` and `to` of the
+`--json` output). Nothing else is taken from a transcript: prompts, command text and file contents are not kept,
+printed or sent anywhere. Each matcher is then tested against those names.
 
 Read the count for what it is:
 
@@ -120,7 +130,7 @@ tool names found in your own sessions count as known.
 
 - It does not run your hooks or simulate their exit codes.
 - It reads project, local and user settings. Managed policy settings, plugin `hooks.json` files and hooks in
-  skill frontmatter are not read.
+  skill or subagent frontmatter are not read.
 - The transcript format is not a documented interface. If a Claude Code release changes it, the history line
   will say it found no tool calls and the static checks still work.
 
@@ -135,8 +145,8 @@ node --test
 MIT. Made for the [Agent Shipped](https://www.youtube.com/@AgentShipped) channel, where each technique is shown
 on a public demo repo. Not affiliated with Anthropic.
 
-## Shown in
+## Where it came from
 
-Videos on the Agent Shipped channel that use this repo:
-
-- [I wired 5 Claude Code hooks on a real repo. Two never fired](https://youtu.be/aR5c3T0jqvc) · E028 · 2026-11-22
+- [I wired 5 Claude Code hooks on a real repo. Two never fired](https://youtu.be/aR5c3T0jqvc) · E028 · 2026-11-22.
+  The video shows the two hooks of the example staying at zero. It was recorded before this tool was written, so
+  the tool itself is not in it.
