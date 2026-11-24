@@ -57,6 +57,13 @@ export const RETIRED_TOOLS = {
   TaskOutput: "was removed in Claude Code 2.1.277",
 };
 
+// Names that older configs and tutorials use for a tool the tools reference lists under another name. Whether a
+// matcher with the old name still fires is not documented, so it is a warning with the listed name as the hint,
+// and it goes quiet when your own sessions contain calls under the old name.
+export const LISTED_AS = {
+  Task: { now: "Agent", what: "the tool that starts a subagent" },
+};
+
 // handler type -> fields it cannot work without
 export const HOOK_TYPES = {
   command: ["command"],

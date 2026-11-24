@@ -3,7 +3,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { EVENTS, TOOLS, RETIRED_TOOLS, HOOK_TYPES } from "./facts.js";
+import { EVENTS, TOOLS, RETIRED_TOOLS, LISTED_AS, HOOK_TYPES } from "./facts.js";
 
 // Only letters, digits, _, -, spaces, commas and | : a list of exact names. Anything else: a regular expression.
 const LIST = /^[A-Za-z0-9_\-, |]+$/;
@@ -35,23 +35,67 @@ const lower = (s) => s.toLowerCase();
 const byLower = (list) => new Map(list.map((x) => [lower(x), x]));
 const finding = (level, code, message, fix) => ({ level, code, message, fix });
 
+/**
+ * The words of the first simple command, quotes removed, the way a shell joins them: `"$A"/b.sh` is one word.
+ * Stops at the first unquoted ; | & < > because what follows is another command or a redirection.
+ */
+export function shellWords(command) {
+  const words = [];
+  let cur = "";
+  let open = false;
+  let quote = null;
+  for (const ch of command) {
+    if (quote) {
+      if (ch === quote) quote = null;
+      else cur += ch;
+    } else if (ch === '"' || ch === "'") {
+      quote = ch;
+      open = true;
+    } else if (";|&<>".includes(ch)) {
+      break;
+    } else if (/\s/.test(ch)) {
+      if (open) words.push(cur);
+      cur = "";
+      open = false;
+    } else {
+      cur += ch;
+      open = true;
+    }
+  }
+  if (open) words.push(cur);
+  return words;
+}
+
+// Claude Code sets CLAUDE_PROJECT_DIR for every hook command, so a ${VAR:-default} fallback is never the one used.
+const PROJECT_DIR = /\$\{CLAUDE_PROJECT_DIR(?::?-[^}]*)?\}|\$CLAUDE_PROJECT_DIR(?![A-Za-z0-9_])/g;
+const PROJECT_DIR_WIN = /\$env:CLAUDE_PROJECT_DIR(?![A-Za-z0-9_])|%CLAUDE_PROJECT_DIR%/gi;
+const HOME_DIR = /^(?:~|\$\{HOME\}|\$HOME(?![A-Za-z0-9_]))(?=[\\/])/;
+const HOME_DIR_WIN = /^(?:\$env:USERPROFILE(?![A-Za-z0-9_])|%USERPROFILE%)(?=[\\/])/i;
+const SHELLS = new Set(["bash", "sh", "zsh", "dash", "ksh", "fish"]);
+
 /** The script file a command runs, when it can be worked out without running anything. */
 export function scriptPath(command, projectDir) {
-  const words = (command.match(/"[^"]*"|'[^']*'|\S+/g) ?? []).map((w) => w.replace(/^["']|["']$/g, ""));
-  const interpreters = new Set(["bash", "sh", "zsh", "node", "python", "python3", "uv", "npx", "deno", "bun", "pwsh", "powershell", "env"]);
+  const words = shellWords(command);
+  const interpreters = new Set([...SHELLS, "node", "python", "python3", "uv", "npx", "deno", "bun", "pwsh", "powershell", "env"]);
   let direct = true;
+  let shell = false;
   for (const raw of words) {
     if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(raw)) continue; // VAR=value prefix
-    if (interpreters.has(path.basename(raw).replace(/\.exe$/i, ""))) {
+    const name = path.basename(raw).replace(/\.exe$/i, "");
+    if (interpreters.has(name)) {
       direct = false;
+      shell = SHELLS.has(name);
       continue;
     }
-    if (["-c", "-e", "-m", "-p", "--eval", "--command", "-Command"].includes(raw)) return null; // inline code
+    if (["-c", "-e", "-m", "-p", "--eval", "--command", "-Command", "-EncodedCommand"].includes(raw)) return null; // inline code
+    if (shell && /^-[A-Za-z]*c$/.test(raw)) return null; // bash -lc "..."
     if (raw.startsWith("-") || raw === "run") continue;
     const w = raw
-      .replace(/^\$\{?CLAUDE_PROJECT_DIR\}?/, projectDir)
-      .replace(/^(~|\$\{?HOME\}?)(?=[\\/])/, os.homedir());
-    if (w.includes("$")) return null; // a variable we cannot resolve
+      .replace(PROJECT_DIR, () => projectDir)
+      .replace(PROJECT_DIR_WIN, () => projectDir)
+      .replace(HOME_DIR, () => os.homedir())
+      .replace(HOME_DIR_WIN, () => os.homedir());
+    if (w.includes("$") || /%[A-Za-z_][A-Za-z0-9_]*%/.test(w)) return null; // a variable we cannot resolve
     const looksLikeFile = /[\\/]/.test(w) || /\.(sh|js|mjs|cjs|py|ts|ps1)$/.test(w);
     if (!looksLikeFile) return null;
     const relative = !path.isAbsolute(w);
@@ -99,6 +143,10 @@ function checkMatcher(event, matcher, tools) {
         dead.push(finding("error", "case", `"${n}" never fires: matchers are case-sensitive and the tool is called ${known.get(lower(n))}`, `write "${known.get(lower(n))}"`));
       } else if (RETIRED_TOOLS[n]) {
         out.push(finding("info", "retired-tool", `"${n}" ${RETIRED_TOOLS[n]}`, `drop "${n}" from the matcher`));
+      } else if (LISTED_AS[n]) {
+        const { now, what } = LISTED_AS[n];
+        if (p.names.includes(now)) continue; // "Task|Agent": both names on purpose
+        dead.push(finding("warn", "unknown-tool", `"${n}" is not in the current tools reference: ${what} is listed there as ${now}`, `write "${now}", or "${n}|${now}" if the same file also runs on an older Claude Code`));
       } else {
         const near = tools.filter((t) => t.startsWith(n) || n.startsWith(t));
         dead.push(finding("warn", "unknown-tool", `"${n}" is not a tool name this version knows; a name in a list must equal the whole tool name${near.length ? ` (did you mean ${near.join(" or ")}?)` : ""}`, near.length ? `write "${near[0]}", or a regular expression such as "${n}.*"` : "check the spelling against the tool names in your own sessions (the history line above lists them)"));

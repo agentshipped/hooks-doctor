@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { matches, lintSettings, scriptPath, worst } from "../src/lint.js";
+import { matches, lintSettings, scriptPath, shellWords, worst } from "../src/lint.js";
 
 const example = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "examples", "five-hooks");
 const codes = (h) => h.findings.map((f) => f.code);
@@ -93,6 +93,15 @@ test("names this version does not know are a warning, unless the project's sessi
   assert.deepEqual(codes(lintSettings(settings, { extraTools: ["BrandNewTool"] }).hooks[0]), []);
   assert.deepEqual(codes(lintOne("PreToolUse", "mcp__memory__create")), []);
   assert.deepEqual(codes(lintOne("PostToolUse", "Edit|MultiEdit|Write")), ["retired-tool"]);
+  // Task: the hint is the name the tools reference lists for subagents, not the TaskCreate family
+  const task = lintOne("PreToolUse", "Task");
+  assert.deepEqual(codes(task), ["unknown-tool"]);
+  assert.equal(task.findings[0].level, "warn");
+  assert.match(task.findings[0].message, /listed there as Agent/);
+  assert.match(task.findings[0].fix, /^write "Agent", or "Task\|Agent"/);
+  assert.deepEqual(codes(lintSettings(group("PreToolUse", "Task"), { extraTools: ["Task"] }).hooks[0]), []);
+  assert.deepEqual(codes(lintOne("PreToolUse", "Task|Agent")), []);
+  assert.deepEqual(codes(lintOne("PreToolUse", "Task|Bash")), ["unknown-tool"]);
 });
 
 test("events: wrong case is dead, unknown is a warning, matcher on Stop is only a note", () => {
@@ -128,6 +137,20 @@ test("script checks: missing file, not executable, relative path", () => {
   assert.deepEqual(run("bash hooks/a.sh"), ["relative-path"]);
   assert.deepEqual(run('bash "$CLAUDE_PROJECT_DIR"/hooks/a.sh'), []);
   assert.deepEqual(run("${CLAUDE_PROJECT_DIR}/hooks/a.sh", "win32"), []);
+  // the quoted variable and the path after it are one word: the script is checked, not the project directory
+  assert.deepEqual(run('bash "$CLAUDE_PROJECT_DIR"/hooks/missing.sh'), ["script-missing"]);
+  assert.deepEqual(run('bash "$CLAUDE_PROJECT_DIR/hooks/missing.sh"'), ["script-missing"]);
+  // a fallback value is not the path: Claude Code always sets the variable for a hook
+  assert.deepEqual(run('pwsh -NoProfile -File "${CLAUDE_PROJECT_DIR:-C:/somewhere/else}/hooks/a.sh" -Mode start'), []);
+  assert.deepEqual(run("bash ${CLAUDE_PROJECT_DIR-/somewhere/else}/hooks/a.sh"), []);
+  assert.deepEqual(run('bash "${CLAUDE_PROJECT_DIR:-/somewhere/else}/hooks/missing.sh"'), ["script-missing"]);
+  assert.deepEqual(run("pwsh -File $env:CLAUDE_PROJECT_DIR/hooks/a.sh"), []);
+  assert.deepEqual(run("pwsh -File %CLAUDE_PROJECT_DIR%/hooks/a.sh"), []);
+  // what follows ; | && > is not part of the script's name
+  assert.deepEqual(run('bash "$CLAUDE_PROJECT_DIR"/hooks/a.sh; echo done'), []);
+  assert.deepEqual(run('bash "$CLAUDE_PROJECT_DIR"/hooks/a.sh>/dev/null 2>&1'), []);
+  assert.deepEqual(run('bash "$CLAUDE_PROJECT_DIR"/hooks/a.sh|tee -a log.txt'), []);
+  assert.deepEqual(run('bash "$CLAUDE_PROJECT_DIR"/hooks/missing.sh && echo ok'), ["script-missing"]);
   if (process.platform !== "win32") assert.deepEqual(run("$CLAUDE_PROJECT_DIR/hooks/a.sh"), ["not-executable"]);
   fs.rmSync(dir, { recursive: true });
 });
@@ -135,6 +158,12 @@ test("script checks: missing file, not executable, relative path", () => {
 test("scriptPath leaves alone what it cannot resolve", () => {
   const none = ["echo done", "jq -r .tool_input.command", "npx prettier --write file", 'bash -c "cat ./x.sh"', "python3 -m tool.run", "$PLUGIN_DIR/run.sh", "node -e \"require('./x.js')\""];
   for (const c of none) assert.equal(scriptPath(c, "/p"), null, c);
+  const alsoNone = ['bash -lc "npm run lint -- ./src/index.js"', "zsh -ic 'source ./env.sh'", "${PLUGIN_DIR:-/opt/x}/run.sh", "${CLAUDE_PROJECT_DIR:?unset}/run.sh",
+    "%APPDATA%/tool/run.ps1", "pwsh -File $env:TOOLS/run.ps1", "pwsh -EncodedCommand ZQBjAGgAbwA=", "$CLAUDE_PROJECT_DIRX/run.sh", "echo ./x.sh | sh"];
+  for (const c of alsoNone) assert.equal(scriptPath(c, "/p"), null, c);
+  assert.deepEqual(shellWords(`pwsh -File "$A"/b' c'.ps1 "d e" ; rm x`), ["pwsh", "-File", "$A/b c.ps1", "d e"]);
+  assert.deepEqual(shellWords("a 'b \"c\"' \"d 'e'\" f>g"), ["a", 'b "c"', "d 'e'", "f"]);
+  assert.equal(scriptPath('"$CLAUDE_PROJECT_DIR"/hooks/x.sh --flag', "/p").shown, "$CLAUDE_PROJECT_DIR/hooks/x.sh");
   assert.equal(scriptPath("FOO=1 bash ./x.sh", "/p").shown, "./x.sh");
   assert.equal(scriptPath("uv run scripts/check.py", "/p").direct, false);
   assert.equal(scriptPath("./x.sh --flag", "/p").direct, true);

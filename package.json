@@ -1,6 +1,6 @@
 {
   "name": "hooks-doctor",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Which of your Claude Code hooks never fire, and why. Static checks plus a replay of your own sessions.",
   "type": "module",
   "bin": {
