@@ -147,6 +147,6 @@ on a public demo repo. Not affiliated with Anthropic.
 
 ## Where it came from
 
-- [I wired 5 Claude Code hooks on a real repo. Two never fired](https://youtu.be/aR5c3T0jqvc) · E028 · 2026-11-22.
+- [I wired 5 Claude Code hooks. Two never fired](https://youtu.be/aR5c3T0jqvc) · E028 · 2026-11-22.
   The video shows the two hooks of the example staying at zero. It was recorded before this tool was written, so
   the tool itself is not in it.
